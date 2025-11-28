@@ -63,6 +63,11 @@ php-fpm
 
 **PHP Version**: Pilih PHP 8.2 atau sesuai dengan `composer.json`
 
+**Port**: 
+- Jika menggunakan `php artisan serve`: Set ke **8000** (default Laravel)
+- Jika menggunakan PHP-FPM dengan Nixpacks: Coolify akan handle otomatis, tapi bisa set ke **80** atau biarkan default
+- **Catatan**: Coolify akan expose port ini secara otomatis, jadi tidak perlu khawatir tentang port exposure
+
 ### 3. Environment Variables
 
 Tambahkan environment variables berikut di Coolify:

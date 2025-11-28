@@ -1,5 +1,5 @@
 # Multi-stage build untuk Laravel
-FROM php:8.2-fpm-alpine AS base
+FROM php:8.2-cli-alpine AS base
 
 # Install system dependencies
 RUN apk add --no-cache \
@@ -10,6 +10,7 @@ RUN apk add --no-cache \
     zip \
     unzip \
     postgresql-dev \
+    postgresql-client \
     nodejs \
     npm
 
@@ -37,6 +38,10 @@ RUN npm ci
 # Copy application files
 COPY . .
 
+# Copy entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 # Build assets
 RUN npm run build
 
@@ -46,17 +51,22 @@ RUN chown -R www-data:www-data /var/www/html \
     && chmod -R 755 /var/www/html/bootstrap/cache
 
 # Production stage
-FROM php:8.2-fpm-alpine
+FROM php:8.2-cli-alpine
 
 # Install system dependencies
 RUN apk add --no-cache \
-    postgresql-dev
+    postgresql-dev \
+    postgresql-client
 
 # Install PHP extensions
 RUN docker-php-ext-install pdo pdo_pgsql
 
 # Copy application from base stage
 COPY --from=base /var/www/html /var/www/html
+
+# Copy entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Set working directory
 WORKDIR /var/www/html
@@ -66,9 +76,13 @@ RUN chown -R www-data:www-data /var/www/html \
     && chmod -R 755 /var/www/html/storage \
     && chmod -R 755 /var/www/html/bootstrap/cache
 
-# Expose port
-EXPOSE 9000
+# Expose port 8000 (Laravel default)
+EXPOSE 8000
 
-# Start PHP-FPM
-CMD ["php-fpm"]
+# Set entrypoint
+ENTRYPOINT ["docker-entrypoint.sh"]
+
+# Start Laravel development server
+# Note: For production, consider using PHP-FPM with Nginx
+CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]
 
