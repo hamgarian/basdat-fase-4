@@ -95,6 +95,38 @@ SESSION_LIFETIME=120
 QUEUE_CONNECTION=database
 ```
 
+**⚠️ PENTING: Set Variables sebagai "Runtime Only"**
+
+Untuk menghindari error build (`flag needs an argument: --build-arg`), **set variabel berikut sebagai "Runtime only"** di Coolify:
+
+1. **Semua Database Variables** (DB_*):
+   - `DB_CONNECTION`
+   - `DB_HOST`
+   - `DB_PORT`
+   - `DB_DATABASE`
+   - `DB_USERNAME`
+   - `DB_PASSWORD`
+
+2. **App Configuration**:
+   - `APP_KEY`
+   - `APP_URL`
+   - `APP_DEBUG` (atau set ke `false` untuk build)
+
+3. **Session & Cache**:
+   - `SESSION_DRIVER`
+   - `SESSION_LIFETIME`
+   - `CACHE_STORE`
+
+4. **Queue**:
+   - `QUEUE_CONNECTION`
+
+**Cara set "Runtime only" di Coolify:**
+1. Buka Environment Variables
+2. Edit setiap variable di atas
+3. **Uncheck "Available at Buildtime"**
+4. **Check "Available at Runtime"** saja
+5. Save
+
 **Catatan Penting**:
 - `APP_KEY`: Generate dengan `php artisan key:generate` atau set manual
 - Database credentials: 
@@ -102,7 +134,12 @@ QUEUE_CONNECTION=database
   - Di Coolify, cek internal URL database (format: `postgres://user:pass@SERVICE_NAME:5432/dbname`)
   - Service name biasanya seperti `o4ogcg0cckcs4wk0wccw0448` atau nama yang Anda berikan
   - Contoh: Jika internal URL adalah `postgres://postgres:1337@o4ogcg0cckcs4wk0wccw0448:5432/laravel`, maka `DB_HOST=o4ogcg0cckcs4wk0wccw0448`
-- `APP_URL`: Set ke domain yang akan digunakan
+- `APP_URL`: **PENTING**: Set ke **HTTPS URL** lengkap, contoh: `https://projek-basdat.ilhem.eu.org` (bukan `http://`)
+  - Jika `APP_URL` menggunakan `http://`, browser akan memblokir asset karena Mixed Content error
+  - Pastikan menggunakan `https://` jika situs diakses via HTTPS
+  - **Quick Fix**: Di Coolify, edit `APP_URL` dan ubah dari `http://` ke `https://`
+  - Setelah mengubah, redeploy aplikasi
+- Variables yang bisa tetap "Buildtime": `APP_NAME`, `APP_ENV`, `LOG_CHANNEL`, `LOG_LEVEL` (tidak masalah jika kosong)
 
 ### 4. Database Setup
 
@@ -221,6 +258,22 @@ Ini adalah error yang paling umum. Cek hal-hal berikut:
 - Pastikan `npm run build` berjalan dengan sukses
 - Check apakah `public/build` folder ada
 - Pastikan `APP_URL` sudah benar
+
+### Mixed Content Error (HTTP assets on HTTPS page)
+**Error**: `Mixed Content: The page at 'https://...' was loaded over HTTPS, but requested an insecure stylesheet 'http://...'`
+
+**Penyebab**: `APP_URL` di-set ke `http://` padahal situs diakses via `https://`
+
+**Solusi**:
+1. Di Coolify → Environment Variables
+2. Edit `APP_URL`
+3. Ubah dari `http://projek-basdat.ilhem.eu.org` menjadi `https://projek-basdat.ilhem.eu.org`
+4. Pastikan menggunakan `https://` (bukan `http://`)
+5. Redeploy aplikasi
+
+**Catatan**: 
+- `AppServiceProvider` sudah di-update untuk auto-detect HTTPS dari proxy headers
+- Tapi tetap pastikan `APP_URL` menggunakan `https://` untuk menghindari masalah
 
 ## Production Checklist
 

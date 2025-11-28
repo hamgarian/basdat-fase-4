@@ -44,6 +44,13 @@ if [ -n "$DB_HOST" ]; then
     php artisan migrate --force || true
 fi
 
+# Clear config cache to ensure APP_URL and other env vars are fresh
+echo "Clearing config cache to refresh environment variables..."
+php artisan config:clear || true
+
+# Cache config for production (will use current APP_URL from environment)
+php artisan config:cache || true
+
 # Start the application
 exec "$@"
 
