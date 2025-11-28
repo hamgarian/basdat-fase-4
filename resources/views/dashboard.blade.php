@@ -1493,10 +1493,10 @@
                                 </div>
                             </button>
                         </div>
-                    </div>
                 </div>
             </div>
         </div>
+    </div>
 
         <!-- Modals - Always available for CRUD operations -->
         @include('dashboard.modals.hazard-report')

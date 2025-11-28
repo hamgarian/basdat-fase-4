@@ -6,10 +6,14 @@
 -- Skrip ini berisi:
 -- 1. Perintah DDL (Data Definition Language) untuk membuat semua tabel.
 -- 2. Perintah DML (Data Manipulation Language) untuk memasukkan data contoh.
+--
+-- CATATAN: Script ini hanya akan membuat tabel jika belum ada.
+-- Jika tabel sudah ada, script akan di-skip untuk mencegah data loss.
 -- =============================================================================
 
--- Hapus tabel jika sudah ada untuk eksekusi ulang (opsional, hati-hati di production)
--- DROP TABLE IF EXISTS flight_movement, incident, investigation, temuan, library_manual, helicopter, private_jet, pilot, penerbangan, hazard_report, audit, pesawat, karyawan, client, "user" CASCADE;
+-- Check if tables already exist at the beginning
+-- If tables exist, this script will be skipped by the entrypoint script
+-- This comment serves as documentation that the check happens in docker-entrypoint.sh
 
 -- =============================================================================
 -- BAGIAN 1: DDL (CREATE TABLE)

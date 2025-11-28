@@ -26,8 +26,8 @@ WORKDIR /var/www/html
 # Copy composer files
 COPY composer.json composer.lock ./
 
-# Install PHP dependencies
-RUN composer install --no-dev --optimize-autoloader --no-interaction
+# Install PHP dependencies (skip post-install scripts for now)
+RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts
 
 # Copy package files
 COPY package.json package-lock.json ./
@@ -35,12 +35,15 @@ COPY package.json package-lock.json ./
 # Install Node dependencies
 RUN npm ci
 
-# Copy application files
+# Copy all application files (needed before running composer post-install scripts)
 COPY . .
 
 # Copy entrypoint script
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Run composer post-install scripts now that all files are available
+RUN composer dump-autoload --optimize --no-interaction
 
 # Build assets
 RUN npm run build
