@@ -54,6 +54,25 @@ In order to ensure that the Laravel community is welcoming to all, please review
 
 If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
 
+## Deployment
+
+### Deploy ke Coolify
+
+Aplikasi ini dapat di-deploy ke Coolify dari GitHub repository. Lihat [DEPLOYMENT.md](DEPLOYMENT.md) untuk panduan lengkap.
+
+**Quick Start:**
+1. Push kode ke GitHub repository
+2. Di Coolify, buat resource baru dan connect ke GitHub repository
+3. Set environment variables (lihat DEPLOYMENT.md)
+4. Deploy!
+
+**Environment Variables yang Diperlukan:**
+- `APP_KEY` - Generate dengan `php artisan key:generate`
+- `DB_*` - PostgreSQL database credentials
+- `APP_URL` - URL aplikasi Anda
+
+Lihat `.env.example` untuk daftar lengkap environment variables.
+
 ## License
 
 The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
