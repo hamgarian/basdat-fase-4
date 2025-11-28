@@ -83,7 +83,7 @@ LOG_CHANNEL=stack
 LOG_LEVEL=error
 
 DB_CONNECTION=pgsql
-DB_HOST=your-postgres-host
+DB_HOST=your-postgres-service-name
 DB_PORT=5432
 DB_DATABASE=your-database-name
 DB_USERNAME=your-database-user
@@ -97,7 +97,11 @@ QUEUE_CONNECTION=database
 
 **Catatan Penting**:
 - `APP_KEY`: Generate dengan `php artisan key:generate` atau set manual
-- Database credentials: Sesuaikan dengan database PostgreSQL Anda
+- Database credentials: 
+  - **`DB_HOST`**: Gunakan **internal service name** dari Coolify (bukan `127.0.0.1` atau `localhost`)
+  - Di Coolify, cek internal URL database (format: `postgres://user:pass@SERVICE_NAME:5432/dbname`)
+  - Service name biasanya seperti `o4ogcg0cckcs4wk0wccw0448` atau nama yang Anda berikan
+  - Contoh: Jika internal URL adalah `postgres://postgres:1337@o4ogcg0cckcs4wk0wccw0448:5432/laravel`, maka `DB_HOST=o4ogcg0cckcs4wk0wccw0448`
 - `APP_URL`: Set ke domain yang akan digunakan
 
 ### 4. Database Setup
@@ -165,6 +169,38 @@ chown -R www-data:www-data storage bootstrap/cache
 
 ## Troubleshooting
 
+### Error: "Bad Gateway" (502)
+Ini adalah error yang paling umum. Cek hal-hal berikut:
+
+1. **Port Configuration di Coolify**:
+   - Pastikan port di Coolify di-set ke **8000** (sama dengan `EXPOSE 8000` di Dockerfile)
+   - Di Coolify: Settings → Port → Set ke `8000`
+   - Jika menggunakan Dockerfile, pastikan `EXPOSE 8000` ada
+
+2. **Check Application Logs**:
+   - Di Coolify, buka "Logs" untuk aplikasi
+   - Cek apakah ada error saat startup
+   - Pastikan server berjalan: `Server running on [http://0.0.0.0:8000]`
+
+3. **Health Check**:
+   - Coolify mungkin melakukan health check yang gagal
+   - Pastikan aplikasi benar-benar running dan merespons request
+   - Cek apakah ada error di logs terkait health check
+
+4. **Start Command**:
+   - Pastikan Start Command di Coolify adalah: `php artisan serve --host=0.0.0.0 --port=8000`
+   - Atau jika menggunakan Dockerfile, pastikan CMD sudah benar
+
+5. **Network/Container Issues**:
+   - Pastikan container tidak crash setelah startup
+   - Cek resource usage (CPU/Memory) di Coolify
+   - Pastikan tidak ada port conflict
+
+6. **Quick Fix - Try This**:
+   - Di Coolify Settings → Port: Set ke `8000`
+   - Di Coolify Settings → Start Command: `php artisan serve --host=0.0.0.0 --port=8000`
+   - Redeploy aplikasi
+
 ### Error: "APP_KEY is not set"
 - Generate APP_KEY: `php artisan key:generate`
 - Copy key yang di-generate ke environment variable `APP_KEY`
@@ -173,11 +209,13 @@ chown -R www-data:www-data storage bootstrap/cache
 - Pastikan database credentials benar
 - Pastikan database sudah dibuat
 - Pastikan network/security group mengizinkan koneksi
+- Pastikan `DB_HOST` menggunakan service name (bukan `127.0.0.1`)
 
 ### Error: 500 Internal Server Error
 - Check logs di Coolify
 - Pastikan `APP_DEBUG=true` sementara untuk debugging
 - Check file permissions
+- Pastikan `storage` dan `bootstrap/cache` memiliki permission yang benar
 
 ### Assets tidak muncul
 - Pastikan `npm run build` berjalan dengan sukses

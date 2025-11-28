@@ -3,11 +3,24 @@ set -e
 
 # Wait for database to be ready (optional, but recommended)
 if [ -n "$DB_HOST" ]; then
-    echo "Waiting for database to be ready..."
-    until pg_isready -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USERNAME"; do
-        sleep 1
+    echo "Waiting for database to be ready at $DB_HOST:${DB_PORT:-5432}..."
+    # Try to connect with a timeout (max 30 seconds)
+    timeout=30
+    elapsed=0
+    while [ $elapsed -lt $timeout ]; do
+        if pg_isready -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USERNAME" >/dev/null 2>&1; then
+            echo "Database is ready!"
+            break
+        fi
+        echo "Waiting for database... ($elapsed/$timeout seconds)"
+        sleep 2
+        elapsed=$((elapsed + 2))
     done
-    echo "Database is ready!"
+    
+    if [ $elapsed -ge $timeout ]; then
+        echo "Warning: Database connection timeout. Continuing anyway..."
+        echo "Make sure DB_HOST is set to the correct database service name (not 127.0.0.1)"
+    fi
 fi
 
 # Run schema.sql if it exists and database is configured
