@@ -413,8 +413,8 @@ class DashboardController extends Controller
     {
         $validated = $request->validate([
             'id_audit' => ['required', 'integer', 'exists:audit,id_audit'],
-            'deskripsi_temuan' => ['required', 'text'],
-            'rekomendasi' => ['nullable', 'text'],
+            'deskripsi_temuan' => ['required', 'string'],
+            'rekomendasi' => ['nullable', 'string'],
             'status_tindak_lanjut' => ['required', 'string', 'max:50'],
         ]);
 
