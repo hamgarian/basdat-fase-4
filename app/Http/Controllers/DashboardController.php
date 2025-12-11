@@ -18,6 +18,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 
 class DashboardController extends Controller
 {
@@ -56,22 +57,22 @@ class DashboardController extends Controller
             SUM(CASE WHEN status = \'Aktif\' THEN 1 ELSE 0 END) as active
         ')->first();
         
-        // System-wide statistics
-        $totalKaryawan = Karyawan::count();
-        $totalClients = Client::count();
+        // System-wide statistics - Cache for 5 minutes (300 seconds)
+        $totalKaryawan = Cache::remember('stats:karyawan:total', 300, fn() => Karyawan::count());
+        $totalClients = Cache::remember('stats:clients:total', 300, fn() => Client::count());
         $totalPesawat = $pesawatStats->total;
         $activePesawat = $pesawatStats->active;
         $totalPilots = $pilotStats->total;
         $activePilots = $pilotStats->active;
         
-        // Statistics for other entities
-        $totalIncidents = Incident::count();
-        $totalInvestigations = Investigation::count();
-        $totalAudits = Audit::count();
-        $totalTemuan = Temuan::count();
-        $totalLibraryManuals = LibraryManual::count();
-        $totalPenerbangan = Penerbangan::count();
-        $totalFlightMovements = FlightMovement::count();
+        // Statistics for other entities - Cache for 5 minutes
+        $totalIncidents = Cache::remember('stats:incidents:total', 300, fn() => Incident::count());
+        $totalInvestigations = Cache::remember('stats:investigations:total', 300, fn() => Investigation::count());
+        $totalAudits = Cache::remember('stats:audits:total', 300, fn() => Audit::count());
+        $totalTemuan = Cache::remember('stats:temuan:total', 300, fn() => Temuan::count());
+        $totalLibraryManuals = Cache::remember('stats:library_manuals:total', 300, fn() => LibraryManual::count());
+        $totalPenerbangan = Cache::remember('stats:penerbangan:total', 300, fn() => Penerbangan::count());
+        $totalFlightMovements = Cache::remember('stats:flight_movements:total', 300, fn() => FlightMovement::count());
         
         // Recent activity (last 5 entries from each entity)
         $recentIncidents = Incident::with('penerbangan.pesawat')->orderByDesc('id_incident')->limit(5)->get();
@@ -202,6 +203,9 @@ class DashboardController extends Controller
         $validated['id_karyawan'] = (int) $validated['id_karyawan'];
 
         HazardReport::create($validated);
+        
+        // Clear cache when hazard report is created
+        $this->clearHazardReportCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'hazard-reports'])
@@ -229,6 +233,9 @@ class DashboardController extends Controller
         $validated['id_karyawan'] = (int) $validated['id_karyawan'];
 
         $hazardReport->update($validated);
+        
+        // Clear cache when hazard report is updated
+        $this->clearHazardReportCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'hazard-reports'])
@@ -238,6 +245,9 @@ class DashboardController extends Controller
     public function destroyReport(HazardReport $hazardReport): RedirectResponse
     {
         $hazardReport->delete();
+        
+        // Clear cache when hazard report is deleted
+        $this->clearHazardReportCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'hazard-reports'])
@@ -351,6 +361,7 @@ class DashboardController extends Controller
         ]);
 
         Incident::create($validated);
+        $this->clearIncidentCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'incidents'])
@@ -367,6 +378,7 @@ class DashboardController extends Controller
         ]);
 
         $incident->update($validated);
+        $this->clearIncidentCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'incidents'])
@@ -376,6 +388,7 @@ class DashboardController extends Controller
     public function destroyIncident(Incident $incident): RedirectResponse
     {
         $incident->delete();
+        $this->clearIncidentCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'incidents'])
@@ -394,6 +407,7 @@ class DashboardController extends Controller
         ]);
 
         Investigation::create($validated);
+        $this->clearInvestigationCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'investigations'])
@@ -411,6 +425,7 @@ class DashboardController extends Controller
         ]);
 
         $investigation->update($validated);
+        $this->clearInvestigationCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'investigations'])
@@ -420,6 +435,7 @@ class DashboardController extends Controller
     public function destroyInvestigation(Investigation $investigation): RedirectResponse
     {
         $investigation->delete();
+        $this->clearInvestigationCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'investigations'])
@@ -439,6 +455,7 @@ class DashboardController extends Controller
         ]);
 
         Audit::create($validated);
+        $this->clearAuditCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'audits'])
@@ -457,6 +474,7 @@ class DashboardController extends Controller
         ]);
 
         $audit->update($validated);
+        $this->clearAuditCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'audits'])
@@ -466,6 +484,7 @@ class DashboardController extends Controller
     public function destroyAudit(Audit $audit): RedirectResponse
     {
         $audit->delete();
+        $this->clearAuditCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'audits'])
@@ -483,6 +502,7 @@ class DashboardController extends Controller
         ]);
 
         Temuan::create($validated);
+        $this->clearTemuanCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'temuan'])
@@ -499,6 +519,7 @@ class DashboardController extends Controller
         ]);
 
         $temuan->update($validated);
+        $this->clearTemuanCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'temuan'])
@@ -508,6 +529,7 @@ class DashboardController extends Controller
     public function destroyTemuan(Temuan $temuan): RedirectResponse
     {
         $temuan->delete();
+        $this->clearTemuanCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'temuan'])
@@ -526,6 +548,7 @@ class DashboardController extends Controller
         ]);
 
         LibraryManual::create($validated);
+        $this->clearLibraryManualCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'library-manuals'])
@@ -543,6 +566,7 @@ class DashboardController extends Controller
         ]);
 
         $libraryManual->update($validated);
+        $this->clearLibraryManualCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'library-manuals'])
@@ -552,6 +576,7 @@ class DashboardController extends Controller
     public function destroyLibraryManual(LibraryManual $libraryManual): RedirectResponse
     {
         $libraryManual->delete();
+        $this->clearLibraryManualCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'library-manuals'])
@@ -570,6 +595,7 @@ class DashboardController extends Controller
         ]);
 
         Penerbangan::create($validated);
+        $this->clearPenerbanganCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'penerbangan'])
@@ -587,6 +613,7 @@ class DashboardController extends Controller
         ]);
 
         $penerbangan->update($validated);
+        $this->clearPenerbanganCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'penerbangan'])
@@ -596,6 +623,7 @@ class DashboardController extends Controller
     public function destroyPenerbangan(Penerbangan $penerbangan): RedirectResponse
     {
         $penerbangan->delete();
+        $this->clearPenerbanganCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'penerbangan'])
@@ -614,6 +642,7 @@ class DashboardController extends Controller
         ]);
 
         FlightMovement::create($validated);
+        $this->clearFlightMovementCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'flight-movements'])
@@ -631,6 +660,7 @@ class DashboardController extends Controller
         ]);
 
         $flightMovement->update($validated);
+        $this->clearFlightMovementCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'flight-movements'])
@@ -640,6 +670,7 @@ class DashboardController extends Controller
     public function destroyFlightMovement(FlightMovement $flightMovement): RedirectResponse
     {
         $flightMovement->delete();
+        $this->clearFlightMovementCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'flight-movements'])
@@ -757,6 +788,7 @@ class DashboardController extends Controller
         ]);
 
         Client::create($validated);
+        $this->clearClientCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'clients'])
@@ -773,6 +805,7 @@ class DashboardController extends Controller
         ]);
 
         $client->update($validated);
+        $this->clearClientCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'clients'])
@@ -782,6 +815,7 @@ class DashboardController extends Controller
     public function destroyClient(Client $client): RedirectResponse
     {
         $client->delete();
+        $this->clearClientCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'clients'])
@@ -835,5 +869,62 @@ class DashboardController extends Controller
         } catch (\Exception $e) {
             return response()->json(['error' => 'Data not found'], 404);
         }
+    }
+
+    // ========== CACHE MANAGEMENT HELPERS ==========
+    private function clearHazardReportCache(): void
+    {
+        // No specific cache keys for hazard reports as they are always fetched fresh
+        // This method exists for consistency and future cache implementation
+    }
+
+    private function clearIncidentCache(): void
+    {
+        Cache::forget('stats:incidents:total');
+    }
+
+    private function clearInvestigationCache(): void
+    {
+        Cache::forget('stats:investigations:total');
+    }
+
+    private function clearAuditCache(): void
+    {
+        Cache::forget('stats:audits:total');
+    }
+
+    private function clearTemuanCache(): void
+    {
+        Cache::forget('stats:temuan:total');
+    }
+
+    private function clearLibraryManualCache(): void
+    {
+        Cache::forget('stats:library_manuals:total');
+    }
+
+    private function clearPenerbanganCache(): void
+    {
+        Cache::forget('stats:penerbangan:total');
+    }
+
+    private function clearFlightMovementCache(): void
+    {
+        Cache::forget('stats:flight_movements:total');
+    }
+
+    private function clearPesawatCache(): void
+    {
+        // No specific cache keys as pesawat stats are always fetched fresh
+    }
+
+    private function clearPilotCache(): void
+    {
+        // No specific cache keys as pilot stats are always fetched fresh
+    }
+
+    private function clearClientCache(): void
+    {
+        Cache::forget('stats:clients:total');
     }
 }
