@@ -18,6 +18,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 
 class DashboardController extends Controller
 {
@@ -32,28 +33,46 @@ class DashboardController extends Controller
             return $this->safetyReports($request, $section);
         }
         
-        // Statistik utama - Hazard Reports
-        $totalReports = HazardReport::count();
-        $openReports = HazardReport::where('status', 'Open')->count();
-        $investigatedReports = HazardReport::where('status', 'Investigated')->count();
-        $closedReports = HazardReport::where('status', 'Closed')->count();
+        // Optimize: Get all counts in fewer queries using raw SQL
+        $hazardReportStats = HazardReport::selectRaw('
+            COUNT(*) as total,
+            SUM(CASE WHEN status = \'Open\' THEN 1 ELSE 0 END) as open,
+            SUM(CASE WHEN status = \'Investigated\' THEN 1 ELSE 0 END) as investigated,
+            SUM(CASE WHEN status = \'Closed\' THEN 1 ELSE 0 END) as closed
+        ')->first();
         
-        // System-wide statistics
-        $totalKaryawan = Karyawan::count();
-        $totalClients = Client::count();
-        $totalPesawat = Pesawat::count();
-        $activePesawat = Pesawat::where('status', 'Aktif')->count();
-        $totalPilots = Pilot::count();
-        $activePilots = Pilot::where('status', 'Aktif')->count();
+        $totalReports = $hazardReportStats->total;
+        $openReports = $hazardReportStats->open;
+        $investigatedReports = $hazardReportStats->investigated;
+        $closedReports = $hazardReportStats->closed;
         
-        // Statistics for other entities
-        $totalIncidents = Incident::count();
-        $totalInvestigations = Investigation::count();
-        $totalAudits = Audit::count();
-        $totalTemuan = Temuan::count();
-        $totalLibraryManuals = LibraryManual::count();
-        $totalPenerbangan = Penerbangan::count();
-        $totalFlightMovements = FlightMovement::count();
+        // Optimize: Get pesawat and pilot counts in single queries
+        $pesawatStats = Pesawat::selectRaw('
+            COUNT(*) as total,
+            SUM(CASE WHEN status = \'Aktif\' THEN 1 ELSE 0 END) as active
+        ')->first();
+        
+        $pilotStats = Pilot::selectRaw('
+            COUNT(*) as total,
+            SUM(CASE WHEN status = \'Aktif\' THEN 1 ELSE 0 END) as active
+        ')->first();
+        
+        // System-wide statistics - Cache for 5 minutes (300 seconds)
+        $totalKaryawan = Cache::remember('stats:karyawan:total', 300, fn() => Karyawan::count());
+        $totalClients = Cache::remember('stats:clients:total', 300, fn() => Client::count());
+        $totalPesawat = $pesawatStats->total;
+        $activePesawat = $pesawatStats->active;
+        $totalPilots = $pilotStats->total;
+        $activePilots = $pilotStats->active;
+        
+        // Statistics for other entities - Cache for 5 minutes
+        $totalIncidents = Cache::remember('stats:incidents:total', 300, fn() => Incident::count());
+        $totalInvestigations = Cache::remember('stats:investigations:total', 300, fn() => Investigation::count());
+        $totalAudits = Cache::remember('stats:audits:total', 300, fn() => Audit::count());
+        $totalTemuan = Cache::remember('stats:temuan:total', 300, fn() => Temuan::count());
+        $totalLibraryManuals = Cache::remember('stats:library_manuals:total', 300, fn() => LibraryManual::count());
+        $totalPenerbangan = Cache::remember('stats:penerbangan:total', 300, fn() => Penerbangan::count());
+        $totalFlightMovements = Cache::remember('stats:flight_movements:total', 300, fn() => FlightMovement::count());
         
         // Recent activity (last 5 entries from each entity)
         $recentIncidents = Incident::with('penerbangan.pesawat')->orderByDesc('id_incident')->limit(5)->get();
@@ -116,14 +135,14 @@ class DashboardController extends Controller
             ->orderByDesc('count')
             ->get();
 
-        // Data untuk modals dropdowns (always needed for modals to work)
-        $karyawan = Karyawan::orderBy('nama_karyawan')->get();
-        $allClients = Client::orderBy('nama_perusahaan')->get();
-        $allPesawat = Pesawat::with('client')->orderBy('registrasi')->get();
-        $allPenerbangan = Penerbangan::with('pesawat')->orderByDesc('tanggal_penerbangan')->get();
-        $allPilots = Pilot::with('karyawan')->orderBy('lisensi_pilot')->get();
-        $allAudits = Audit::with('karyawan')->orderByDesc('tanggal_pelaksanaan')->get();
-        $allHazardReports = HazardReport::orderByDesc('tanggal_laporan')->get(); // For investigation modal
+        // Data untuk modals dropdowns - NOT needed for overview, only set empty arrays
+        $karyawan = collect();
+        $allClients = collect();
+        $allPesawat = collect();
+        $allPenerbangan = collect();
+        $allPilots = collect();
+        $allAudits = collect();
+        $allHazardReports = collect();
 
         return view('dashboard', compact(
             'action',
@@ -184,6 +203,9 @@ class DashboardController extends Controller
         $validated['id_karyawan'] = (int) $validated['id_karyawan'];
 
         HazardReport::create($validated);
+        
+        // Clear cache when hazard report is created
+        $this->clearHazardReportCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'hazard-reports'])
@@ -211,6 +233,9 @@ class DashboardController extends Controller
         $validated['id_karyawan'] = (int) $validated['id_karyawan'];
 
         $hazardReport->update($validated);
+        
+        // Clear cache when hazard report is updated
+        $this->clearHazardReportCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'hazard-reports'])
@@ -220,6 +245,9 @@ class DashboardController extends Controller
     public function destroyReport(HazardReport $hazardReport): RedirectResponse
     {
         $hazardReport->delete();
+        
+        // Clear cache when hazard report is deleted
+        $this->clearHazardReportCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'hazard-reports'])
@@ -230,27 +258,73 @@ class DashboardController extends Controller
     {
         $action = 'safety-reports'; // Set action untuk safety-reports section
         
-        // Load semua data untuk safety reports section
-        $hazardReports = HazardReport::with('karyawan', 'investigation')->orderByDesc('tanggal_laporan')->paginate(10, ['*'], 'hazard_page');
-        $incidents = Incident::with('penerbangan.pesawat')->orderByDesc('id_incident')->paginate(10, ['*'], 'incident_page');
-        $investigations = Investigation::with('hazardReport.karyawan')->orderByDesc('tanggal_mulai')->paginate(10, ['*'], 'investigation_page');
-        $audits = Audit::with('karyawan', 'temuan')->orderByDesc('tanggal_pelaksanaan')->paginate(10, ['*'], 'audit_page');
-        $temuan = Temuan::with('audit')->orderByDesc('id_temuan')->paginate(10, ['*'], 'temuan_page');
-        $libraryManuals = LibraryManual::with('karyawan')->orderByDesc('tanggal_terbit')->paginate(10, ['*'], 'manual_page');
-        $penerbangan = Penerbangan::with('pesawat.client', 'incidents', 'flightMovements.pilot.karyawan')->orderByDesc('tanggal_penerbangan')->paginate(10, ['*'], 'penerbangan_page');
-        $flightMovements = FlightMovement::with('penerbangan.pesawat', 'pilot.karyawan')->orderByDesc('tanggal_penerbangan')->paginate(10, ['*'], 'flight_page');
-        $pesawat = Pesawat::with('client', 'helicopter', 'privateJet')->orderBy('registrasi')->paginate(10, ['*'], 'pesawat_page');
-        $pilots = Pilot::with('karyawan')->orderBy('lisensi_pilot')->paginate(10, ['*'], 'pilot_page');
-        $clients = Client::with('pesawat')->orderBy('nama_perusahaan')->paginate(10, ['*'], 'client_page');
+        // Optimize: Only load data for the active section
+        $hazardReports = $section === 'hazard-reports' 
+            ? HazardReport::with('karyawan', 'investigation')->orderByDesc('tanggal_laporan')->paginate(10, ['*'], 'hazard_page')
+            : collect();
+            
+        $incidents = $section === 'incidents' 
+            ? Incident::with('penerbangan.pesawat')->orderByDesc('id_incident')->paginate(10, ['*'], 'incident_page')
+            : collect();
+            
+        $investigations = $section === 'investigations' 
+            ? Investigation::with('hazardReport.karyawan')->orderByDesc('tanggal_mulai')->paginate(10, ['*'], 'investigation_page')
+            : collect();
+            
+        $audits = $section === 'audits' 
+            ? Audit::with('karyawan', 'temuan')->orderByDesc('tanggal_pelaksanaan')->paginate(10, ['*'], 'audit_page')
+            : collect();
+            
+        $temuan = $section === 'temuan' 
+            ? Temuan::with('audit')->orderByDesc('id_temuan')->paginate(10, ['*'], 'temuan_page')
+            : collect();
+            
+        $libraryManuals = $section === 'library-manuals' 
+            ? LibraryManual::with('karyawan')->orderByDesc('tanggal_terbit')->paginate(10, ['*'], 'manual_page')
+            : collect();
+            
+        $penerbangan = $section === 'penerbangan' 
+            ? Penerbangan::with('pesawat.client', 'incidents', 'flightMovements.pilot.karyawan')->orderByDesc('tanggal_penerbangan')->paginate(10, ['*'], 'penerbangan_page')
+            : collect();
+            
+        $flightMovements = $section === 'flight-movements' 
+            ? FlightMovement::with('penerbangan.pesawat', 'pilot.karyawan')->orderByDesc('tanggal_penerbangan')->paginate(10, ['*'], 'flight_page')
+            : collect();
+            
+        $pesawat = $section === 'pesawat' 
+            ? Pesawat::with('client', 'helicopter', 'privateJet')->orderBy('registrasi')->paginate(10, ['*'], 'pesawat_page')
+            : collect();
+            
+        $pilots = $section === 'pilots' 
+            ? Pilot::with('karyawan')->orderBy('lisensi_pilot')->paginate(10, ['*'], 'pilot_page')
+            : collect();
+            
+        $clients = $section === 'clients' 
+            ? Client::with('pesawat')->orderBy('nama_perusahaan')->paginate(10, ['*'], 'client_page')
+            : collect();
         
-        // Data untuk dropdowns
-        $karyawan = Karyawan::orderBy('nama_karyawan')->get();
-        $allClients = Client::orderBy('nama_perusahaan')->get();
-        $allPesawat = Pesawat::with('client')->orderBy('registrasi')->get();
-        $allPenerbangan = Penerbangan::with('pesawat')->orderByDesc('tanggal_penerbangan')->get();
-        $allPilots = Pilot::with('karyawan')->orderBy('lisensi_pilot')->get();
-        $allAudits = Audit::with('karyawan')->orderByDesc('tanggal_pelaksanaan')->get();
-        $allHazardReports = HazardReport::orderByDesc('tanggal_laporan')->get(); // For investigation modal
+        // Optimize: Load dropdown data with only necessary fields
+        $karyawan = Karyawan::select('id_karyawan', 'nama_karyawan')->orderBy('nama_karyawan')->get();
+        $allClients = Client::select('id_client', 'nama_perusahaan')->orderBy('nama_perusahaan')->get();
+        $allPesawat = Pesawat::select('id_pesawat', 'id_client', 'registrasi', 'merk_model')
+            ->with('client:id_client,nama_perusahaan')
+            ->orderBy('registrasi')
+            ->get();
+        $allPenerbangan = Penerbangan::select('id_penerbangan', 'id_pesawat', 'tanggal_penerbangan', 'jenis_penerbangan')
+            ->with('pesawat:id_pesawat,registrasi,merk_model')
+            ->orderByDesc('tanggal_penerbangan')
+            ->get();
+        $allPilots = Pilot::select('id_pilot', 'id_karyawan', 'lisensi_pilot')
+            ->with('karyawan:id_karyawan,nama_karyawan')
+            ->orderBy('lisensi_pilot')
+            ->get();
+        $allAudits = Audit::select('id_audit', 'id_karyawan', 'nomor_audit', 'judul', 'tanggal_pelaksanaan')
+            ->with('karyawan:id_karyawan,nama_karyawan')
+            ->orderByDesc('tanggal_pelaksanaan')
+            ->get();
+        $allHazardReports = HazardReport::select('id_hazard', 'tanggal_laporan', 'kategori', 'deskripsi')
+            ->orderByDesc('tanggal_laporan')
+            ->get();
 
         return view('dashboard', compact(
             'action',
@@ -287,6 +361,7 @@ class DashboardController extends Controller
         ]);
 
         Incident::create($validated);
+        $this->clearIncidentCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'incidents'])
@@ -303,6 +378,7 @@ class DashboardController extends Controller
         ]);
 
         $incident->update($validated);
+        $this->clearIncidentCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'incidents'])
@@ -312,6 +388,7 @@ class DashboardController extends Controller
     public function destroyIncident(Incident $incident): RedirectResponse
     {
         $incident->delete();
+        $this->clearIncidentCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'incidents'])
@@ -330,6 +407,7 @@ class DashboardController extends Controller
         ]);
 
         Investigation::create($validated);
+        $this->clearInvestigationCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'investigations'])
@@ -347,6 +425,7 @@ class DashboardController extends Controller
         ]);
 
         $investigation->update($validated);
+        $this->clearInvestigationCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'investigations'])
@@ -356,6 +435,7 @@ class DashboardController extends Controller
     public function destroyInvestigation(Investigation $investigation): RedirectResponse
     {
         $investigation->delete();
+        $this->clearInvestigationCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'investigations'])
@@ -375,6 +455,7 @@ class DashboardController extends Controller
         ]);
 
         Audit::create($validated);
+        $this->clearAuditCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'audits'])
@@ -393,6 +474,7 @@ class DashboardController extends Controller
         ]);
 
         $audit->update($validated);
+        $this->clearAuditCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'audits'])
@@ -402,6 +484,7 @@ class DashboardController extends Controller
     public function destroyAudit(Audit $audit): RedirectResponse
     {
         $audit->delete();
+        $this->clearAuditCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'audits'])
@@ -419,6 +502,7 @@ class DashboardController extends Controller
         ]);
 
         Temuan::create($validated);
+        $this->clearTemuanCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'temuan'])
@@ -435,6 +519,7 @@ class DashboardController extends Controller
         ]);
 
         $temuan->update($validated);
+        $this->clearTemuanCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'temuan'])
@@ -444,6 +529,7 @@ class DashboardController extends Controller
     public function destroyTemuan(Temuan $temuan): RedirectResponse
     {
         $temuan->delete();
+        $this->clearTemuanCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'temuan'])
@@ -462,6 +548,7 @@ class DashboardController extends Controller
         ]);
 
         LibraryManual::create($validated);
+        $this->clearLibraryManualCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'library-manuals'])
@@ -479,6 +566,7 @@ class DashboardController extends Controller
         ]);
 
         $libraryManual->update($validated);
+        $this->clearLibraryManualCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'library-manuals'])
@@ -488,6 +576,7 @@ class DashboardController extends Controller
     public function destroyLibraryManual(LibraryManual $libraryManual): RedirectResponse
     {
         $libraryManual->delete();
+        $this->clearLibraryManualCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'library-manuals'])
@@ -506,6 +595,7 @@ class DashboardController extends Controller
         ]);
 
         Penerbangan::create($validated);
+        $this->clearPenerbanganCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'penerbangan'])
@@ -523,6 +613,7 @@ class DashboardController extends Controller
         ]);
 
         $penerbangan->update($validated);
+        $this->clearPenerbanganCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'penerbangan'])
@@ -532,6 +623,7 @@ class DashboardController extends Controller
     public function destroyPenerbangan(Penerbangan $penerbangan): RedirectResponse
     {
         $penerbangan->delete();
+        $this->clearPenerbanganCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'penerbangan'])
@@ -550,6 +642,7 @@ class DashboardController extends Controller
         ]);
 
         FlightMovement::create($validated);
+        $this->clearFlightMovementCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'flight-movements'])
@@ -567,6 +660,7 @@ class DashboardController extends Controller
         ]);
 
         $flightMovement->update($validated);
+        $this->clearFlightMovementCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'flight-movements'])
@@ -576,6 +670,7 @@ class DashboardController extends Controller
     public function destroyFlightMovement(FlightMovement $flightMovement): RedirectResponse
     {
         $flightMovement->delete();
+        $this->clearFlightMovementCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'flight-movements'])
@@ -605,6 +700,8 @@ class DashboardController extends Controller
                 'jangkauan_terbang' => $request->jangkauan_terbang,
             ]);
         }
+        
+        $this->clearPesawatCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'pesawat'])
@@ -623,6 +720,7 @@ class DashboardController extends Controller
         ]);
 
         $pesawat->update($validated);
+        $this->clearPesawatCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'pesawat'])
@@ -632,6 +730,7 @@ class DashboardController extends Controller
     public function destroyPesawat(Pesawat $pesawat): RedirectResponse
     {
         $pesawat->delete();
+        $this->clearPesawatCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'pesawat'])
@@ -650,6 +749,7 @@ class DashboardController extends Controller
         ]);
 
         Pilot::create($validated);
+        $this->clearPilotCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'pilots'])
@@ -667,6 +767,7 @@ class DashboardController extends Controller
         ]);
 
         $pilot->update($validated);
+        $this->clearPilotCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'pilots'])
@@ -676,6 +777,7 @@ class DashboardController extends Controller
     public function destroyPilot(Pilot $pilot): RedirectResponse
     {
         $pilot->delete();
+        $this->clearPilotCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'pilots'])
@@ -693,6 +795,7 @@ class DashboardController extends Controller
         ]);
 
         Client::create($validated);
+        $this->clearClientCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'clients'])
@@ -709,6 +812,7 @@ class DashboardController extends Controller
         ]);
 
         $client->update($validated);
+        $this->clearClientCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'clients'])
@@ -718,6 +822,7 @@ class DashboardController extends Controller
     public function destroyClient(Client $client): RedirectResponse
     {
         $client->delete();
+        $this->clearClientCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'clients'])
@@ -771,5 +876,79 @@ class DashboardController extends Controller
         } catch (\Exception $e) {
             return response()->json(['error' => 'Data not found'], 404);
         }
+    }
+
+    // ========== CACHE MANAGEMENT HELPERS ==========
+    /**
+     * Clear cache for hazard reports.
+     * Currently no cached data for hazard reports as they include dynamic status aggregation.
+     * Method exists for consistency and potential future caching implementation.
+     */
+    private function clearHazardReportCache(): void
+    {
+        // Hazard report stats use dynamic aggregation (selectRaw) not cached
+        // If caching is added in the future, clear cache keys here
+    }
+
+    private function clearIncidentCache(): void
+    {
+        Cache::forget('stats:incidents:total');
+    }
+
+    private function clearInvestigationCache(): void
+    {
+        Cache::forget('stats:investigations:total');
+    }
+
+    private function clearAuditCache(): void
+    {
+        Cache::forget('stats:audits:total');
+    }
+
+    private function clearTemuanCache(): void
+    {
+        Cache::forget('stats:temuan:total');
+    }
+
+    private function clearLibraryManualCache(): void
+    {
+        Cache::forget('stats:library_manuals:total');
+    }
+
+    private function clearPenerbanganCache(): void
+    {
+        Cache::forget('stats:penerbangan:total');
+    }
+
+    private function clearFlightMovementCache(): void
+    {
+        Cache::forget('stats:flight_movements:total');
+    }
+
+    /**
+     * Clear cache for pesawat statistics.
+     * Currently no cached data for pesawat as they include dynamic status aggregation.
+     * Method exists for consistency and potential future caching implementation.
+     */
+    private function clearPesawatCache(): void
+    {
+        // Pesawat stats use dynamic aggregation (selectRaw) not cached
+        // If caching is added in the future, clear cache keys here
+    }
+
+    /**
+     * Clear cache for pilot statistics.
+     * Currently no cached data for pilots as they include dynamic status aggregation.
+     * Method exists for consistency and potential future caching implementation.
+     */
+    private function clearPilotCache(): void
+    {
+        // Pilot stats use dynamic aggregation (selectRaw) not cached
+        // If caching is added in the future, clear cache keys here
+    }
+
+    private function clearClientCache(): void
+    {
+        Cache::forget('stats:clients:total');
     }
 }
