@@ -700,6 +700,8 @@ class DashboardController extends Controller
                 'jangkauan_terbang' => $request->jangkauan_terbang,
             ]);
         }
+        
+        $this->clearPesawatCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'pesawat'])
@@ -718,6 +720,7 @@ class DashboardController extends Controller
         ]);
 
         $pesawat->update($validated);
+        $this->clearPesawatCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'pesawat'])
@@ -727,6 +730,7 @@ class DashboardController extends Controller
     public function destroyPesawat(Pesawat $pesawat): RedirectResponse
     {
         $pesawat->delete();
+        $this->clearPesawatCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'pesawat'])
@@ -745,6 +749,7 @@ class DashboardController extends Controller
         ]);
 
         Pilot::create($validated);
+        $this->clearPilotCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'pilots'])
@@ -762,6 +767,7 @@ class DashboardController extends Controller
         ]);
 
         $pilot->update($validated);
+        $this->clearPilotCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'pilots'])
@@ -771,6 +777,7 @@ class DashboardController extends Controller
     public function destroyPilot(Pilot $pilot): RedirectResponse
     {
         $pilot->delete();
+        $this->clearPilotCache();
 
         return redirect()
             ->route('dashboard', ['action' => 'safety-reports', 'section' => 'pilots'])
