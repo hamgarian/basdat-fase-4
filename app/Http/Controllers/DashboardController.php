@@ -32,19 +32,37 @@ class DashboardController extends Controller
             return $this->safetyReports($request, $section);
         }
         
-        // Statistik utama - Hazard Reports
-        $totalReports = HazardReport::count();
-        $openReports = HazardReport::where('status', 'Open')->count();
-        $investigatedReports = HazardReport::where('status', 'Investigated')->count();
-        $closedReports = HazardReport::where('status', 'Closed')->count();
+        // Optimize: Get all counts in fewer queries using raw SQL
+        $hazardReportStats = HazardReport::selectRaw('
+            COUNT(*) as total,
+            SUM(CASE WHEN status = \'Open\' THEN 1 ELSE 0 END) as open,
+            SUM(CASE WHEN status = \'Investigated\' THEN 1 ELSE 0 END) as investigated,
+            SUM(CASE WHEN status = \'Closed\' THEN 1 ELSE 0 END) as closed
+        ')->first();
+        
+        $totalReports = $hazardReportStats->total;
+        $openReports = $hazardReportStats->open;
+        $investigatedReports = $hazardReportStats->investigated;
+        $closedReports = $hazardReportStats->closed;
+        
+        // Optimize: Get pesawat and pilot counts in single queries
+        $pesawatStats = Pesawat::selectRaw('
+            COUNT(*) as total,
+            SUM(CASE WHEN status = \'Aktif\' THEN 1 ELSE 0 END) as active
+        ')->first();
+        
+        $pilotStats = Pilot::selectRaw('
+            COUNT(*) as total,
+            SUM(CASE WHEN status = \'Aktif\' THEN 1 ELSE 0 END) as active
+        ')->first();
         
         // System-wide statistics
         $totalKaryawan = Karyawan::count();
         $totalClients = Client::count();
-        $totalPesawat = Pesawat::count();
-        $activePesawat = Pesawat::where('status', 'Aktif')->count();
-        $totalPilots = Pilot::count();
-        $activePilots = Pilot::where('status', 'Aktif')->count();
+        $totalPesawat = $pesawatStats->total;
+        $activePesawat = $pesawatStats->active;
+        $totalPilots = $pilotStats->total;
+        $activePilots = $pilotStats->active;
         
         // Statistics for other entities
         $totalIncidents = Incident::count();
@@ -116,14 +134,14 @@ class DashboardController extends Controller
             ->orderByDesc('count')
             ->get();
 
-        // Data untuk modals dropdowns (always needed for modals to work)
-        $karyawan = Karyawan::orderBy('nama_karyawan')->get();
-        $allClients = Client::orderBy('nama_perusahaan')->get();
-        $allPesawat = Pesawat::with('client')->orderBy('registrasi')->get();
-        $allPenerbangan = Penerbangan::with('pesawat')->orderByDesc('tanggal_penerbangan')->get();
-        $allPilots = Pilot::with('karyawan')->orderBy('lisensi_pilot')->get();
-        $allAudits = Audit::with('karyawan')->orderByDesc('tanggal_pelaksanaan')->get();
-        $allHazardReports = HazardReport::orderByDesc('tanggal_laporan')->get(); // For investigation modal
+        // Data untuk modals dropdowns - NOT needed for overview, only set empty arrays
+        $karyawan = collect();
+        $allClients = collect();
+        $allPesawat = collect();
+        $allPenerbangan = collect();
+        $allPilots = collect();
+        $allAudits = collect();
+        $allHazardReports = collect();
 
         return view('dashboard', compact(
             'action',
@@ -230,27 +248,73 @@ class DashboardController extends Controller
     {
         $action = 'safety-reports'; // Set action untuk safety-reports section
         
-        // Load semua data untuk safety reports section
-        $hazardReports = HazardReport::with('karyawan', 'investigation')->orderByDesc('tanggal_laporan')->paginate(10, ['*'], 'hazard_page');
-        $incidents = Incident::with('penerbangan.pesawat')->orderByDesc('id_incident')->paginate(10, ['*'], 'incident_page');
-        $investigations = Investigation::with('hazardReport.karyawan')->orderByDesc('tanggal_mulai')->paginate(10, ['*'], 'investigation_page');
-        $audits = Audit::with('karyawan', 'temuan')->orderByDesc('tanggal_pelaksanaan')->paginate(10, ['*'], 'audit_page');
-        $temuan = Temuan::with('audit')->orderByDesc('id_temuan')->paginate(10, ['*'], 'temuan_page');
-        $libraryManuals = LibraryManual::with('karyawan')->orderByDesc('tanggal_terbit')->paginate(10, ['*'], 'manual_page');
-        $penerbangan = Penerbangan::with('pesawat.client', 'incidents', 'flightMovements.pilot.karyawan')->orderByDesc('tanggal_penerbangan')->paginate(10, ['*'], 'penerbangan_page');
-        $flightMovements = FlightMovement::with('penerbangan.pesawat', 'pilot.karyawan')->orderByDesc('tanggal_penerbangan')->paginate(10, ['*'], 'flight_page');
-        $pesawat = Pesawat::with('client', 'helicopter', 'privateJet')->orderBy('registrasi')->paginate(10, ['*'], 'pesawat_page');
-        $pilots = Pilot::with('karyawan')->orderBy('lisensi_pilot')->paginate(10, ['*'], 'pilot_page');
-        $clients = Client::with('pesawat')->orderBy('nama_perusahaan')->paginate(10, ['*'], 'client_page');
+        // Optimize: Only load data for the active section
+        $hazardReports = $section === 'hazard-reports' 
+            ? HazardReport::with('karyawan', 'investigation')->orderByDesc('tanggal_laporan')->paginate(10, ['*'], 'hazard_page')
+            : collect();
+            
+        $incidents = $section === 'incidents' 
+            ? Incident::with('penerbangan.pesawat')->orderByDesc('id_incident')->paginate(10, ['*'], 'incident_page')
+            : collect();
+            
+        $investigations = $section === 'investigations' 
+            ? Investigation::with('hazardReport.karyawan')->orderByDesc('tanggal_mulai')->paginate(10, ['*'], 'investigation_page')
+            : collect();
+            
+        $audits = $section === 'audits' 
+            ? Audit::with('karyawan', 'temuan')->orderByDesc('tanggal_pelaksanaan')->paginate(10, ['*'], 'audit_page')
+            : collect();
+            
+        $temuan = $section === 'temuan' 
+            ? Temuan::with('audit')->orderByDesc('id_temuan')->paginate(10, ['*'], 'temuan_page')
+            : collect();
+            
+        $libraryManuals = $section === 'library-manuals' 
+            ? LibraryManual::with('karyawan')->orderByDesc('tanggal_terbit')->paginate(10, ['*'], 'manual_page')
+            : collect();
+            
+        $penerbangan = $section === 'penerbangan' 
+            ? Penerbangan::with('pesawat.client', 'incidents', 'flightMovements.pilot.karyawan')->orderByDesc('tanggal_penerbangan')->paginate(10, ['*'], 'penerbangan_page')
+            : collect();
+            
+        $flightMovements = $section === 'flight-movements' 
+            ? FlightMovement::with('penerbangan.pesawat', 'pilot.karyawan')->orderByDesc('tanggal_penerbangan')->paginate(10, ['*'], 'flight_page')
+            : collect();
+            
+        $pesawat = $section === 'pesawat' 
+            ? Pesawat::with('client', 'helicopter', 'privateJet')->orderBy('registrasi')->paginate(10, ['*'], 'pesawat_page')
+            : collect();
+            
+        $pilots = $section === 'pilots' 
+            ? Pilot::with('karyawan')->orderBy('lisensi_pilot')->paginate(10, ['*'], 'pilot_page')
+            : collect();
+            
+        $clients = $section === 'clients' 
+            ? Client::with('pesawat')->orderBy('nama_perusahaan')->paginate(10, ['*'], 'client_page')
+            : collect();
         
-        // Data untuk dropdowns
-        $karyawan = Karyawan::orderBy('nama_karyawan')->get();
-        $allClients = Client::orderBy('nama_perusahaan')->get();
-        $allPesawat = Pesawat::with('client')->orderBy('registrasi')->get();
-        $allPenerbangan = Penerbangan::with('pesawat')->orderByDesc('tanggal_penerbangan')->get();
-        $allPilots = Pilot::with('karyawan')->orderBy('lisensi_pilot')->get();
-        $allAudits = Audit::with('karyawan')->orderByDesc('tanggal_pelaksanaan')->get();
-        $allHazardReports = HazardReport::orderByDesc('tanggal_laporan')->get(); // For investigation modal
+        // Optimize: Load dropdown data with only necessary fields
+        $karyawan = Karyawan::select('id_karyawan', 'nama_karyawan')->orderBy('nama_karyawan')->get();
+        $allClients = Client::select('id_client', 'nama_perusahaan')->orderBy('nama_perusahaan')->get();
+        $allPesawat = Pesawat::select('id_pesawat', 'id_client', 'registrasi', 'merk_model')
+            ->with('client:id_client,nama_perusahaan')
+            ->orderBy('registrasi')
+            ->get();
+        $allPenerbangan = Penerbangan::select('id_penerbangan', 'id_pesawat', 'tanggal_penerbangan', 'jenis_penerbangan')
+            ->with('pesawat:id_pesawat,registrasi,merk_model')
+            ->orderByDesc('tanggal_penerbangan')
+            ->get();
+        $allPilots = Pilot::select('id_pilot', 'id_karyawan', 'lisensi_pilot')
+            ->with('karyawan:id_karyawan,nama_karyawan')
+            ->orderBy('lisensi_pilot')
+            ->get();
+        $allAudits = Audit::select('id_audit', 'id_karyawan', 'nomor_audit', 'judul', 'tanggal_pelaksanaan')
+            ->with('karyawan:id_karyawan,nama_karyawan')
+            ->orderByDesc('tanggal_pelaksanaan')
+            ->get();
+        $allHazardReports = HazardReport::select('id_hazard', 'tanggal_laporan', 'kategori', 'deskripsi')
+            ->orderByDesc('tanggal_laporan')
+            ->get();
 
         return view('dashboard', compact(
             'action',
