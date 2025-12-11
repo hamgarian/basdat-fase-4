@@ -879,10 +879,15 @@ class DashboardController extends Controller
     }
 
     // ========== CACHE MANAGEMENT HELPERS ==========
+    /**
+     * Clear cache for hazard reports.
+     * Currently no cached data for hazard reports as they include dynamic status aggregation.
+     * Method exists for consistency and potential future caching implementation.
+     */
     private function clearHazardReportCache(): void
     {
-        // No specific cache keys for hazard reports as they are always fetched fresh
-        // This method exists for consistency and future cache implementation
+        // Hazard report stats use dynamic aggregation (selectRaw) not cached
+        // If caching is added in the future, clear cache keys here
     }
 
     private function clearIncidentCache(): void
@@ -920,14 +925,26 @@ class DashboardController extends Controller
         Cache::forget('stats:flight_movements:total');
     }
 
+    /**
+     * Clear cache for pesawat statistics.
+     * Currently no cached data for pesawat as they include dynamic status aggregation.
+     * Method exists for consistency and potential future caching implementation.
+     */
     private function clearPesawatCache(): void
     {
-        // No specific cache keys as pesawat stats are always fetched fresh
+        // Pesawat stats use dynamic aggregation (selectRaw) not cached
+        // If caching is added in the future, clear cache keys here
     }
 
+    /**
+     * Clear cache for pilot statistics.
+     * Currently no cached data for pilots as they include dynamic status aggregation.
+     * Method exists for consistency and potential future caching implementation.
+     */
     private function clearPilotCache(): void
     {
-        // No specific cache keys as pilot stats are always fetched fresh
+        // Pilot stats use dynamic aggregation (selectRaw) not cached
+        // If caching is added in the future, clear cache keys here
     }
 
     private function clearClientCache(): void

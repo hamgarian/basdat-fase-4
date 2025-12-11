@@ -31,11 +31,6 @@ return new class extends Migration
             $table->index('lisensi_pilot');
         });
 
-        // Add indexes for incident queries
-        Schema::table('incident', function (Blueprint $table) {
-            $table->index('id_incident');
-        });
-
         // Add indexes for investigation queries
         Schema::table('investigation', function (Blueprint $table) {
             $table->index('tanggal_mulai');
@@ -98,10 +93,6 @@ return new class extends Migration
         Schema::table('pilot', function (Blueprint $table) {
             $table->dropIndex(['status']);
             $table->dropIndex(['lisensi_pilot']);
-        });
-
-        Schema::table('incident', function (Blueprint $table) {
-            $table->dropIndex(['id_incident']);
         });
 
         Schema::table('investigation', function (Blueprint $table) {
